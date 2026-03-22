@@ -1,0 +1,121 @@
+import os
+import re
+
+def parse_korean_amount(text):
+    """'50만', '5만원', '100000' 등 다양한 한국어 금액 표현을 숫자로 변환"""
+    text = text.replace(',', '').replace(' ', '')
+    if '만' in text:
+        split_text = text.split('만')
+        num_part = re.findall(r'\d+', split_text[0])
+        if num_part:
+            return int(num_part[0]) * 10000
+    num_part = re.findall(r'\d+', text)
+    if num_part:
+        return int(num_part[0])
+    return None
+
+def get_weight(item):
+    """항목명에 따른 가중치 점수 반환"""
+    essential_keywords = ["식비", "월세", "주거", "교통", "통신", "보험", "대출", "공과금", "교육"]
+    luxury_keywords = ["꾸밈", "사치", "쇼핑", "유흥", "취미", "게임", "네일", "미용", "플렉스"]
+    
+    if any(key in item for key in essential_keywords):
+        return 20  # 필수 항목 가중치
+    elif any(key in item for key in luxury_keywords):
+        return 5   # 사치 항목 가중치
+    return 10      # 기본 가중치
+
+def redistribute_with_weights(total_budget, items, fixed_item=None, fixed_amount=0):
+    """특정 항목이 고정되었을 때, 나머지 항목들을 '가중치 비율'에 맞춰 재배분"""
+    new_plan = {}
+    
+    if fixed_item:
+        new_plan[fixed_item] = fixed_amount
+        remaining_money = total_budget - fixed_amount
+        other_items = [i for i in items if i != fixed_item]
+    else:
+        remaining_money = total_budget
+        other_items = items
+
+    # 나머지 항목들의 총 가중치 계산
+    total_weight = sum(get_weight(item) for item in other_items)
+    
+    if total_weight > 0 and remaining_money >= 0:
+        for item in other_items:
+            # 남은 돈을 나머지 항목들의 가중치 비율대로 배분
+            ratio = get_weight(item) / total_weight
+            new_plan[item] = int(remaining_money * ratio)
+    
+    return new_plan
+
+def print_display(total, plan, message=""):
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print("\n" + "='="*20)
+    print(f" 🇰🇷 AI 스마트 예산 플래너 (가중치 보존형)")
+    print(f" 💰 총 예산: {total:,}원")
+    if message:
+        print(f" 🤖 AI 가이드: {message}")
+    print("-" * 60)
+    print(f"{'항목명':<12} | {'금액 (원)':>18} | {'비중 (%)':>8}")
+    print("-" * 60)
+    # 정렬을 위해 항목명 순으로 출력
+    for item in sorted(plan.keys()):
+        money = plan[item]
+        ratio = (money / total) * 100 if total > 0 else 0
+        print(f"{item:<12} | {money:>16,}원 | {ratio:>9.1f}%")
+    print("="*60)
+
+def main():
+    try:
+        total_input = input("\n💵 총 예산을 입력하세요 (예: 200만): ")
+        total_budget = parse_korean_amount(total_input)
+        if not total_budget: return
+
+        items_input = input("📍 항목들을 입력하세요 (쉼표 구분): ")
+        items = [i.strip() for i in items_input.split(',')]
+        
+        # 처음 배분 시에도 가중치 적용
+        current_plan = redistribute_with_weights(total_budget, items)
+        ai_msg = "초기 예산안입니다. 필수 항목 비중이 높게 설정되었습니다."
+
+        while True:
+            print_display(total_budget, current_plan, ai_msg)
+            print("\n💬 [ AI 피드백 루프 ]")
+            print("- 예: '식비 50만', '절약 모드', 'q(종료)'")
+            
+            user_msg = input("\n나: ")
+            if user_msg.lower() in ['q', '완료', '종료']: break
+
+            # 1. 자동 모드 (절약)
+            if "절약" in user_msg:
+                save_item = "저축" if "저축" in items else items[-1]
+                save_amount = int(total_budget * 0.5)
+                current_plan = redistribute_with_weights(total_budget, items, save_item, save_amount)
+                ai_msg = f"📉 절약 모드! {save_item}을 50%로 고정하고 나머지는 가중치에 따라 조정했습니다."
+                continue
+
+            # 2. 키워드 기반 수동 수정 (가중치 보존 재배분)
+            found = False
+            for item in items:
+                if item in user_msg:
+                    parts = user_msg.split(item)
+                    if len(parts) > 1:
+                        target_amount = parse_korean_amount(parts[1])
+                        if target_amount is not None:
+                            if target_amount > total_budget:
+                                ai_msg = "⚠️ 예산 초과입니다! 총액보다 큰 금액은 설정할 수 없어요."
+                            else:
+                                # 핵심 업데이트: 고정된 항목 제외 나머지를 다시 가중치로 배분
+                                current_plan = redistribute_with_weights(total_budget, items, item, target_amount)
+                                ai_msg = f"✅ {item}을 {target_amount:,}원으로 고정하고, 나머지 항목의 중요도를 고려해 재계산했습니다."
+                            found = True; break
+            
+            if not found:
+                ai_msg = "🤔 항목명과 금액을 함께 말씀해주세요! (예: 꾸밈비 5만)"
+
+    except Exception as e:
+        print(f"⚠️ 오류 발생: {e}")
+
+if __name__ == "__main__":
+    main()
+    
